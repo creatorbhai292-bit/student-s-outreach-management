@@ -24,10 +24,11 @@ import {
   deleteDocumentFromSupabase,
   deleteManyDocumentsFromSupabase,
   uploadOptimizedImage,
+  deleteImageFromSupabaseStorage,
 } from './supabase';
 import { optimizeImageTo50to80KB } from './imageOptimizer';
 
-export { isSupabaseConnected, uploadOptimizedImage };
+export { isSupabaseConnected, uploadOptimizedImage, deleteImageFromSupabaseStorage };
 
 // Keep backward-compatible alias so existing components don't crash
 export const isFirebaseConnected = (): boolean => false;

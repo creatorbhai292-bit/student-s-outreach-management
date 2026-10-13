@@ -28,6 +28,7 @@ import {
   deleteManyFromStore,
   STORES,
   clearEntireStore,
+  deleteImageFromSupabaseStorage,
 } from '../lib/db';
 import {
   INITIAL_SETTINGS,
@@ -132,6 +133,7 @@ interface AppContextType {
 
   // Point History & Audit Logs Deletion
   deletePointHistoryRecord: (id: string) => Promise<void>;
+  clearPointHistory: () => Promise<void>;
   deleteAuditLog: (id: string) => Promise<void>;
   clearAuditLogs: () => Promise<void>;
 
@@ -550,6 +552,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteActivity = async (id: string): Promise<void> => {
     const sub = submissions.find((s) => s.id === id);
+    if (sub?.imageUrl) {
+      deleteImageFromSupabaseStorage(sub.imageUrl).catch(() => {});
+    }
+    if (sub?.certificateUrl) {
+      deleteImageFromSupabaseStorage(sub.certificateUrl).catch(() => {});
+    }
     const nextSubs = submissions.filter((s) => s.id !== id);
     setSubmissions(nextSubs);
     await deleteFromStore(STORES.SUBMISSIONS, id);
@@ -813,22 +821,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteStudent = async (id: string) => {
     const target = students.find((s) => s.id === id);
+    if (target?.avatarUrl) {
+      deleteImageFromSupabaseStorage(target.avatarUrl).catch(() => {});
+    }
+
     const nextStudents = students.filter((s) => s.id !== id);
     setStudents(nextStudents);
     await deleteFromStore(STORES.STUDENTS, id);
 
-    // Also delete their submissions from store & Supabase
-    const subIdsToDelete = submissions.filter((s) => s.studentId === id).map((s) => s.id);
+    // 1. Delete student submissions from store & Supabase, plus their proof images
+    const stdSubs = submissions.filter((s) => s.studentId === id);
+    const subIdsToDelete = stdSubs.map((s) => s.id);
+    for (const sub of stdSubs) {
+      if (sub.imageUrl) deleteImageFromSupabaseStorage(sub.imageUrl).catch(() => {});
+      if (sub.certificateUrl) deleteImageFromSupabaseStorage(sub.certificateUrl).catch(() => {});
+    }
     if (subIdsToDelete.length > 0) {
       await deleteManyFromStore(STORES.SUBMISSIONS, subIdsToDelete);
     }
     const remainingSubs = submissions.filter((s) => s.studentId !== id);
     setSubmissions(remainingSubs);
 
-    if (target) {
-      await logAudit('DELETE_STUDENT', `Removed student account ${target.name} (${target.admissionNumber})`, 'student', id);
+    // 2. Cascade delete student certificates
+    const certIds = certificates.filter((c) => c.studentId === id).map((c) => c.id);
+    if (certIds.length > 0) {
+      await deleteManyFromStore(STORES.CERTIFICATES, certIds);
+      setCertificates((prev) => prev.filter((c) => c.studentId !== id));
     }
-    showToast('Student account deleted.', 'info');
+
+    // 3. Cascade delete point history records
+    const histIds = pointHistory.filter((h) => h.studentId === id).map((h) => h.id);
+    if (histIds.length > 0) {
+      await deleteManyFromStore(STORES.POINT_HISTORY, histIds);
+      setPointHistory((prev) => prev.filter((h) => h.studentId !== id));
+    }
+
+    // 4. Cascade delete featured titles
+    const featIds = featuredTitles.filter((f) => f.studentId === id).map((f) => f.id);
+    if (featIds.length > 0) {
+      await deleteManyFromStore(STORES.FEATURED_TITLES, featIds);
+      setFeaturedTitles((prev) => prev.filter((f) => f.studentId !== id));
+    }
+
+    // 5. Re-sync remaining student ranks
+    if (nextStudents.length > 0) {
+      await syncStudentPointsAndRanks(remainingSubs, nextStudents);
+    }
+
+    if (target) {
+      await logAudit('DELETE_STUDENT', `Removed student account ${target.name} (${target.admissionNumber}) and all associated records`, 'student', id);
+    }
+    showToast('Student account & all associated records permanently deleted.', 'info');
   };
 
   const toggleStudentStatus = async (id: string) => {
@@ -976,6 +1019,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Point history ledger entry removed.', 'info');
   };
 
+  const clearPointHistory = async (): Promise<void> => {
+    setPointHistory([]);
+    await clearEntireStore(STORES.POINT_HISTORY);
+    await logAudit('CLEAR_POINT_HISTORY', 'Cleared all point history ledger entries');
+    showToast('Point history ledger completely cleared.', 'info');
+  };
+
   // Audit Logs Deletion
   const deleteAuditLog = async (id: string): Promise<void> => {
     const nextLogs = auditLogs.filter((l) => l.id !== id);
@@ -1118,6 +1168,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         issueNewCertificate,
         deleteCertificate,
         deletePointHistoryRecord,
+        clearPointHistory,
         deleteAuditLog,
         clearAuditLogs,
         updateSettings,

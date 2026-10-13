@@ -266,6 +266,36 @@ export async function uploadOptimizedImage(
 }
 
 /**
+ * Deletes an image from Supabase Storage bucket 'soms-media'.
+ */
+export async function deleteImageFromSupabaseStorage(imageUrl: string): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !imageUrl) return false;
+
+  try {
+    const bucketPrefix = `/${SUPABASE_STORAGE_BUCKET}/`;
+    if (imageUrl.includes(bucketPrefix)) {
+      const parts = imageUrl.split(bucketPrefix);
+      if (parts.length > 1) {
+        const filePath = decodeURIComponent(parts[1].split('?')[0]);
+        const { error } = await supabase.storage
+          .from(SUPABASE_STORAGE_BUCKET)
+          .remove([filePath]);
+        if (error) {
+          console.warn('[Supabase Storage] Delete error:', error.message);
+          return false;
+        }
+        return true;
+      }
+    }
+    return false;
+  } catch (err) {
+    console.warn('[Supabase Storage] Delete exception:', err);
+    return false;
+  }
+}
+
+/**
  * Fetch all records for a collection from Supabase
  */
 export async function fetchCollectionFromSupabase<T extends { id: string }>(
@@ -693,54 +723,54 @@ CREATE TABLE IF NOT EXISTS public.announcements (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable RLS and create open public policies (or customize with Supabase Auth)
-ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.point_rules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.rank_rules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.point_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.featured_titles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.badges ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.certificates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+-- Disable RLS so anon and authenticated users can freely SELECT, INSERT, UPDATE, and DELETE
+ALTER TABLE public.students DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.submissions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.point_rules DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rank_rules DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.point_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.featured_titles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.badges DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.certificates DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.students;
-CREATE POLICY "Public Read/Write All" ON public.students FOR ALL USING (true) WITH CHECK (true);
+-- Grant full table permissions to anon, authenticated, and service_role
+GRANT ALL ON TABLE public.students TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.submissions TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.point_rules TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.rank_rules TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.point_history TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.featured_titles TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.badges TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.certificates TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.notifications TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.audit_logs TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.app_settings TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.announcements TO anon, authenticated, service_role;
 
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.submissions;
-CREATE POLICY "Public Read/Write All" ON public.submissions FOR ALL USING (true) WITH CHECK (true);
+-- 2. CREATE STORAGE BUCKET FOR MEDIA (Avatars, proofs, certificates, banners)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('soms-media', 'soms-media', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
 
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.point_rules;
-CREATE POLICY "Public Read/Write All" ON public.point_rules FOR ALL USING (true) WITH CHECK (true);
+-- 3. STORAGE POLICIES: Allow public read, insert, update, and DELETE on soms-media
+DROP POLICY IF EXISTS "Public Storage Select soms-media" ON storage.objects;
+CREATE POLICY "Public Storage Select soms-media" ON storage.objects
+  FOR SELECT USING (bucket_id = 'soms-media');
 
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.rank_rules;
-CREATE POLICY "Public Read/Write All" ON public.rank_rules FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public Storage Insert soms-media" ON storage.objects;
+CREATE POLICY "Public Storage Insert soms-media" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'soms-media');
 
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.point_history;
-CREATE POLICY "Public Read/Write All" ON public.point_history FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public Storage Update soms-media" ON storage.objects;
+CREATE POLICY "Public Storage Update soms-media" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'soms-media');
 
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.featured_titles;
-CREATE POLICY "Public Read/Write All" ON public.featured_titles FOR ALL USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.badges;
-CREATE POLICY "Public Read/Write All" ON public.badges FOR ALL USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.certificates;
-CREATE POLICY "Public Read/Write All" ON public.certificates FOR ALL USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.notifications;
-CREATE POLICY "Public Read/Write All" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.audit_logs;
-CREATE POLICY "Public Read/Write All" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.app_settings;
-CREATE POLICY "Public Read/Write All" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Read/Write All" ON public.announcements;
-CREATE POLICY "Public Read/Write All" ON public.announcements FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public Storage Delete soms-media" ON storage.objects;
+CREATE POLICY "Public Storage Delete soms-media" ON storage.objects
+  FOR DELETE USING (bucket_id = 'soms-media');
 `;
 }
