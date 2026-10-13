@@ -1,0 +1,8 @@
+{
+  "name": "Remix Real APP",
+  "description": "Comprehensive student achievement, outreach, publications, awards, points, rankings, and verification management platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
