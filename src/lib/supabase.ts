@@ -428,6 +428,35 @@ export async function deleteDocumentFromSupabase(
 }
 
 /**
+ * Batch delete documents from Supabase
+ */
+export async function deleteManyDocumentsFromSupabase(
+  storeName: string,
+  ids: string[]
+): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase || ids.length === 0) return false;
+
+  const tableName = TABLE_MAP[storeName as MappedTableName] || storeName;
+
+  try {
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .in('id', ids);
+
+    if (error) {
+      console.warn(`[Supabase] Batch delete error on "${tableName}":`, error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(`[Supabase] Exception batch deleting from "${tableName}":`, err);
+    return false;
+  }
+}
+
+/**
  * SQL script to set up all tables and storage bucket in Supabase SQL Editor
  */
 export function getSupabaseSQLSetupScript(): string {
@@ -441,17 +470,18 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('${SUPABASE_STORAGE_BUCKET}', '${SUPABASE_STORAGE_BUCKET}', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
--- Storage public read policy
+-- Storage policies (Idempotent)
+DROP POLICY IF EXISTS "Public Access" ON storage.objects;
 CREATE POLICY "Public Access" 
 ON storage.objects FOR SELECT 
 USING (bucket_id = '${SUPABASE_STORAGE_BUCKET}');
 
--- Storage public insert/upload policy
+DROP POLICY IF EXISTS "Public Uploads" ON storage.objects;
 CREATE POLICY "Public Uploads" 
 ON storage.objects FOR INSERT 
 WITH CHECK (bucket_id = '${SUPABASE_STORAGE_BUCKET}');
 
--- Storage public update/delete policy
+DROP POLICY IF EXISTS "Public Manage" ON storage.objects;
 CREATE POLICY "Public Manage" 
 ON storage.objects FOR ALL 
 USING (bucket_id = '${SUPABASE_STORAGE_BUCKET}');
@@ -677,17 +707,40 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.students;
 CREATE POLICY "Public Read/Write All" ON public.students FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.submissions;
 CREATE POLICY "Public Read/Write All" ON public.submissions FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.point_rules;
 CREATE POLICY "Public Read/Write All" ON public.point_rules FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.rank_rules;
 CREATE POLICY "Public Read/Write All" ON public.rank_rules FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.point_history;
 CREATE POLICY "Public Read/Write All" ON public.point_history FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.featured_titles;
 CREATE POLICY "Public Read/Write All" ON public.featured_titles FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.badges;
 CREATE POLICY "Public Read/Write All" ON public.badges FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.certificates;
 CREATE POLICY "Public Read/Write All" ON public.certificates FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.notifications;
 CREATE POLICY "Public Read/Write All" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.audit_logs;
 CREATE POLICY "Public Read/Write All" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.app_settings;
 CREATE POLICY "Public Read/Write All" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Read/Write All" ON public.announcements;
 CREATE POLICY "Public Read/Write All" ON public.announcements FOR ALL USING (true) WITH CHECK (true);
 `;
 }

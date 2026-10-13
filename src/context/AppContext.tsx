@@ -25,6 +25,7 @@ import {
   putInStore,
   putManyInStore,
   deleteFromStore,
+  deleteManyFromStore,
   STORES,
   clearEntireStore,
 } from '../lib/db';
@@ -127,6 +128,16 @@ interface AppContextType {
   saveBadge: (badge: AchievementBadge) => Promise<void>;
   deleteBadge: (id: string) => Promise<void>;
   issueNewCertificate: (cert: Omit<IssuedCertificate, 'id' | 'verificationHash'>) => Promise<IssuedCertificate>;
+  deleteCertificate: (id: string) => Promise<void>;
+
+  // Point History & Audit Logs Deletion
+  deletePointHistoryRecord: (id: string) => Promise<void>;
+  deleteAuditLog: (id: string) => Promise<void>;
+  clearAuditLogs: () => Promise<void>;
+
+  // Announcements CRUD
+  saveAnnouncement: (announcement: Announcement) => Promise<void>;
+  deleteAnnouncement: (id: string) => Promise<void>;
 
   // Settings & DB Reset
   updateSettings: (newSettings: AppSettings) => Promise<void>;
@@ -248,11 +259,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async function loadData() {
       setLoading(true);
       try {
+        const isSeeded = typeof window !== 'undefined' && localStorage.getItem('soms_db_seeded') === 'true';
         let storedStudents = await getAllFromStore<Student>(STORES.STUDENTS);
         
-        if (!storedStudents || storedStudents.length === 0) {
-          // Empty DB: Seed with our comprehensive initial demo data
-          console.log('IndexedDB is empty, seeding initial institutional data...');
+        if (!isSeeded && (!storedStudents || storedStudents.length === 0)) {
+          // Fresh unseeded install only: Seed initial institutional data once
+          console.log('Initial setup: Seeding default institutional data...');
+          if (typeof window !== 'undefined') localStorage.setItem('soms_db_seeded', 'true');
+
           await putManyInStore(STORES.STUDENTS, INITIAL_STUDENTS);
           await putManyInStore(STORES.SUBMISSIONS, INITIAL_SUBMISSIONS);
           await putManyInStore(STORES.POINT_RULES, INITIAL_POINT_RULES);
@@ -279,7 +293,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setAnnouncements(INITIAL_ANNOUNCEMENTS);
           setSettings(INITIAL_SETTINGS);
         } else {
-          // Load stored data
+          // Load stored/cloud data - NEVER resurrect deleted records
+          if (typeof window !== 'undefined') localStorage.setItem('soms_db_seeded', 'true');
           const [
             loadedSubs,
             loadedPointRules,
@@ -306,122 +321,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             getAllFromStore<Announcement>(STORES.ANNOUNCEMENTS),
           ]);
 
-          // Ensure all predefined students with their avatars and portfolios are preserved and purge old domains
-          let studentsToSave = false;
-          const updatedStudents = storedStudents.map((s) => {
-            if (s.email && s.email.includes('@imperial.edu')) {
-              studentsToSave = true;
-              return { ...s, email: s.email.replace('@imperial.edu', '@dhiu.in') };
-            }
-            return s;
-          });
-          if (studentsToSave) {
-            await putManyInStore(STORES.STUDENTS, updatedStudents);
-            storedStudents = updatedStudents;
-          }
-
-          const existingStudentIds = new Set(storedStudents.map((s) => s.id));
-          const missingStudents = INITIAL_STUDENTS.filter((s) => !existingStudentIds.has(s.id));
-          if (missingStudents.length > 0) {
-            await putManyInStore(STORES.STUDENTS, missingStudents);
-            storedStudents.push(...missingStudents);
-          }
-
-          // Ensure all submissions with their photos, articles, and proof certificates are preserved
+          const finalStudents = storedStudents || [];
           const allSubs = loadedSubs || [];
-          const existingSubIds = new Set(allSubs.map((s) => s.id));
-          const missingSubs = INITIAL_SUBMISSIONS.filter((s) => !existingSubIds.has(s.id));
-          if (missingSubs.length > 0) {
-            await putManyInStore(STORES.SUBMISSIONS, missingSubs);
-            allSubs.push(...missingSubs);
-          }
 
-          // Ensure announcements are loaded and permanent INITIAL_ANNOUNCEMENTS (Monthly Assembly) is preserved
-          let finalAnnouncements: Announcement[] = [];
-          if (!loadedAnnouncements || loadedAnnouncements.length === 0) {
-            await putManyInStore(STORES.ANNOUNCEMENTS, INITIAL_ANNOUNCEMENTS);
-            finalAnnouncements = INITIAL_ANNOUNCEMENTS;
-          } else {
-            const existingAnnIds = new Set(loadedAnnouncements.map((a) => a.id));
-            const missingAnns = INITIAL_ANNOUNCEMENTS.filter((a) => !existingAnnIds.has(a.id));
-            if (missingAnns.length > 0) {
-              await putManyInStore(STORES.ANNOUNCEMENTS, missingAnns);
-              finalAnnouncements = [...loadedAnnouncements, ...missingAnns];
-            } else {
-              finalAnnouncements = loadedAnnouncements;
-            }
-          }
-
-          // Ensure featured titles, badges, certificates exist
-          const finalFeatured = loadedFeatured?.length ? loadedFeatured : INITIAL_FEATURED_TITLES;
-          if (!loadedFeatured?.length) await putManyInStore(STORES.FEATURED_TITLES, INITIAL_FEATURED_TITLES);
-
-          const finalBadges = loadedBadges?.length ? loadedBadges : INITIAL_BADGES;
-          if (!loadedBadges?.length) await putManyInStore(STORES.BADGES, INITIAL_BADGES);
-
-          const finalCerts = loadedCerts?.length ? loadedCerts : INITIAL_CERTIFICATES;
-          if (!loadedCerts?.length) await putManyInStore(STORES.CERTIFICATES, INITIAL_CERTIFICATES);
-
-          setStudents(storedStudents);
+          setStudents(finalStudents);
           setSubmissions(allSubs);
-          setPointRules(loadedPointRules.length ? loadedPointRules : INITIAL_POINT_RULES);
-          setRankRules(loadedRankRules.length ? loadedRankRules : INITIAL_RANK_RULES);
-          setPointHistory(loadedHistory);
-          setFeaturedTitles(finalFeatured);
-          setBadges(finalBadges);
-          setCertificates(finalCerts);
-          setNotifications(loadedNotifs);
-          setAuditLogs(loadedAudit);
-          setAnnouncements(finalAnnouncements.sort((a, b) => a.displayOrder - b.displayOrder));
+          setPointRules(loadedPointRules || []);
+          setRankRules(loadedRankRules || []);
+          setPointHistory(loadedHistory || []);
+          setFeaturedTitles(loadedFeatured || []);
+          setBadges(loadedBadges || []);
+          setCertificates(loadedCerts || []);
+          setNotifications(loadedNotifs || []);
+          setAuditLogs(loadedAudit || []);
+          setAnnouncements((loadedAnnouncements || []).sort((a, b) => a.displayOrder - b.displayOrder));
 
-          if (loadedSettings.length > 0) {
-            const current = loadedSettings[0];
-            const updated: AppSettings = {
+          if (loadedSettings && loadedSettings.length > 0) {
+            setSettings({
               ...INITIAL_SETTINGS,
-              ...current,
-              address:
-                !current.address || current.address.includes('Academic Enclave') || current.address.includes('Knowledge Park')
-                  ? INITIAL_SETTINGS.address
-                  : current.address,
-              phone:
-                !current.phone || current.phone.includes('456-7890') || current.phone.includes('+1 (800)')
-                  ? INITIAL_SETTINGS.phone
-                  : current.phone,
-              email:
-                !current.email || current.email.includes('imperialcollege.edu') || current.email.includes('imperial')
-                  ? INITIAL_SETTINGS.email
-                  : current.email,
-              website:
-                !current.website || current.website.includes('imperialcollege.edu') || current.website.includes('imperial')
-                  ? INITIAL_SETTINGS.website
-                  : current.website,
-              showAnnouncementBar: true,
-              announcementBarText:
-                current.announcementBarText &&
-                current.announcementBarText !== 'Welcome to the Official Academic Achievement & Outreach Portal 2025-2026'
-                  ? current.announcementBarText
-                  : INITIAL_SETTINGS.announcementBarText,
-              heroHeadingPrefix:
-                !current.heroHeadingPrefix || current.heroHeadingPrefix === 'Students Outreach Management'
-                  ? 'Students Outreach'
-                  : current.heroHeadingPrefix,
-              heroHeadingHighlight:
-                !current.heroHeadingHighlight || current.heroHeadingHighlight === 'Software'
-                  ? 'Dashboard'
-                  : current.heroHeadingHighlight,
-              tagline: current.tagline?.includes('Management Software')
-                ? current.tagline.replace('Management Software', 'Dashboard')
-                : (current.tagline || INITIAL_SETTINGS.tagline),
-            };
-            setSettings(updated);
-            await putInStore(STORES.SETTINGS, { ...updated, id: 'main_settings' });
+              ...loadedSettings[0],
+            });
           } else {
             setSettings(INITIAL_SETTINGS);
-            await putInStore(STORES.SETTINGS, { ...INITIAL_SETTINGS, id: 'main_settings' });
           }
 
           // Ensure student points and ranks stay strictly synchronized
-          await syncStudentPointsAndRanks(allSubs, storedStudents);
+          if (finalStudents.length > 0 || allSubs.length > 0) {
+            await syncStudentPointsAndRanks(allSubs, finalStudents);
+          }
         }
 
         // Check if there was a saved session
@@ -890,15 +817,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents(nextStudents);
     await deleteFromStore(STORES.STUDENTS, id);
 
-    // Also delete their submissions or keep archived
+    // Also delete their submissions from store & Supabase
+    const subIdsToDelete = submissions.filter((s) => s.studentId === id).map((s) => s.id);
+    if (subIdsToDelete.length > 0) {
+      await deleteManyFromStore(STORES.SUBMISSIONS, subIdsToDelete);
+    }
     const remainingSubs = submissions.filter((s) => s.studentId !== id);
     setSubmissions(remainingSubs);
-    await putManyInStore(STORES.SUBMISSIONS, remainingSubs);
 
     if (target) {
       await logAudit('DELETE_STUDENT', `Removed student account ${target.name} (${target.admissionNumber})`, 'student', id);
     }
-    showToast('Student deleted.', 'info');
+    showToast('Student account deleted.', 'info');
   };
 
   const toggleStudentStatus = async (id: string) => {
@@ -992,7 +922,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Badge removed.', 'info');
   };
 
-  // Certificates
+  // Certificates CRUD
   const issueNewCertificate = async (
     certData: Omit<IssuedCertificate, 'id' | 'verificationHash'>
   ): Promise<IssuedCertificate> => {
@@ -1027,6 +957,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Certificate ${certId} issued with QR verification code!`, 'success');
     fireCertificateCelebration();
     return newCert;
+  };
+
+  const deleteCertificate = async (id: string): Promise<void> => {
+    const nextCerts = certificates.filter((c) => c.id !== id);
+    setCertificates(nextCerts);
+    await deleteFromStore(STORES.CERTIFICATES, id);
+    await logAudit('DELETE_CERTIFICATE', `Revoked / deleted certificate ${id}`);
+    showToast('Certificate removed successfully.', 'info');
+  };
+
+  // Point History Deletion
+  const deletePointHistoryRecord = async (id: string): Promise<void> => {
+    const nextHistory = pointHistory.filter((h) => h.id !== id);
+    setPointHistory(nextHistory);
+    await deleteFromStore(STORES.POINT_HISTORY, id);
+    await logAudit('DELETE_POINT_HISTORY', `Removed point history ledger entry ${id}`);
+    showToast('Point history ledger entry removed.', 'info');
+  };
+
+  // Audit Logs Deletion
+  const deleteAuditLog = async (id: string): Promise<void> => {
+    const nextLogs = auditLogs.filter((l) => l.id !== id);
+    setAuditLogs(nextLogs);
+    await deleteFromStore(STORES.AUDIT_LOGS, id);
+    showToast('Audit log record deleted.', 'info');
+  };
+
+  const clearAuditLogs = async (): Promise<void> => {
+    setAuditLogs([]);
+    await clearEntireStore(STORES.AUDIT_LOGS);
+    showToast('All administrative audit logs cleared.', 'info');
   };
 
   // Settings
@@ -1155,6 +1116,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveBadge,
         deleteBadge,
         issueNewCertificate,
+        deleteCertificate,
+        deletePointHistoryRecord,
+        deleteAuditLog,
+        clearAuditLogs,
         updateSettings,
         saveAnnouncement,
         deleteAnnouncement,

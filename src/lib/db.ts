@@ -22,6 +22,7 @@ import {
   saveDocumentToSupabase,
   saveManyDocumentsToSupabase,
   deleteDocumentFromSupabase,
+  deleteManyDocumentsFromSupabase,
   uploadOptimizedImage,
 } from './supabase';
 import { optimizeImageTo50to80KB } from './imageOptimizer';
@@ -210,7 +211,7 @@ export async function getAllFromStore<T extends { id: string } = any>(storeName:
     if (isSupabaseConnected()) {
       try {
         const cloudDocs = await fetchCollectionFromSupabase<T>(storeName);
-        if (cloudDocs && cloudDocs.length > 0) {
+        if (cloudDocs !== null) {
           memoryStore.set(storeName, cloudDocs);
           // Mirror to local IndexedDB for fast offline availability
           openDB()
@@ -332,37 +333,93 @@ export async function putManyInStore<T extends { id: string }>(
  * Delete item from store and sync delete to Supabase Cloud
  */
 export async function deleteFromStore(storeName: StoreName, id: string): Promise<void> {
+  // 1. Memory and local cache update
   const items = getLocalFallback<{ id: string }>(storeName).filter((i) => i.id !== id);
   memoryStore.set(storeName, items);
-  if (storeName === STORES.SETTINGS) {
-    setLocalFallback(storeName, items);
-  }
+  setLocalFallback(storeName, items);
 
-  // 2. Cloud delete from Supabase
+  // 2. Cloud delete from Supabase (awaited for real-time guarantee)
   if (isSupabaseConnected()) {
-    deleteDocumentFromSupabase(storeName, id).catch((err) => {
+    try {
+      await deleteDocumentFromSupabase(storeName, id);
+    } catch (err) {
       console.warn(`[Supabase] Cloud delete failed on "${storeName}/${id}":`, err);
-    });
+    }
   }
 
   // 3. Local IndexedDB delete
   try {
     const db = await openDB();
     if (db) {
-      const transaction = db.transaction(storeName, 'readwrite');
-      const store = transaction.objectStore(storeName);
-      store.delete(id);
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
     }
   } catch (err) {
     console.warn(`[Database] IndexedDB delete error on ${storeName}:`, err);
   }
 }
 
-export async function clearEntireStore(storeName: StoreName): Promise<void> {
+/**
+ * Batch delete items from store and sync delete to Supabase Cloud
+ */
+export async function deleteManyFromStore(storeName: StoreName, ids: string[]): Promise<void> {
+  if (!ids || ids.length === 0) return;
+  const idSet = new Set(ids);
+  const items = getLocalFallback<{ id: string }>(storeName).filter((i) => !idSet.has(i.id));
+  memoryStore.set(storeName, items);
+  setLocalFallback(storeName, items);
+
+  // Cloud batch delete from Supabase
+  if (isSupabaseConnected()) {
+    try {
+      await deleteManyDocumentsFromSupabase(storeName, ids);
+    } catch (err) {
+      console.warn(`[Supabase] Cloud batch delete failed on "${storeName}":`, err);
+    }
+  }
+
+  // Local IndexedDB batch delete
   try {
     const db = await openDB();
+    if (db) {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        ids.forEach((id) => store.delete(id));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+    }
+  } catch (err) {
+    console.warn(`[Database] IndexedDB batch delete error on ${storeName}:`, err);
+  }
+}
+
+export async function clearEntireStore(storeName: StoreName): Promise<void> {
+  try {
+    memoryStore.set(storeName, []);
+    setLocalFallback(storeName, []);
+
+    // Also clear from Supabase if connected
+    if (isSupabaseConnected()) {
+      try {
+        const currentItems = await fetchCollectionFromSupabase<{ id: string }>(storeName);
+        if (currentItems && currentItems.length > 0) {
+          const ids = currentItems.map((i) => i.id);
+          await deleteManyDocumentsFromSupabase(storeName, ids);
+        }
+      } catch (err) {
+        console.warn(`[Supabase] Failed to clear cloud store "${storeName}":`, err);
+      }
+    }
+
+    const db = await openDB();
     if (!db) {
-      setLocalFallback(storeName, []);
       return;
     }
 
@@ -372,7 +429,6 @@ export async function clearEntireStore(storeName: StoreName): Promise<void> {
       const request = store.clear();
 
       request.onsuccess = () => {
-        setLocalFallback(storeName, []);
         resolve();
       };
 
@@ -380,7 +436,6 @@ export async function clearEntireStore(storeName: StoreName): Promise<void> {
     });
   } catch (err) {
     console.error(`Error clearing ${storeName}:`, err);
-    setLocalFallback(storeName, []);
   }
 }
 

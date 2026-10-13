@@ -119,6 +119,10 @@ export const AdminPanel: React.FC = () => {
     saveBadge,
     deleteBadge,
     issueNewCertificate,
+    deleteCertificate,
+    deletePointHistoryRecord,
+    deleteAuditLog,
+    clearAuditLogs,
     updateSettings,
     resetDatabaseToDefault,
     showToast,
@@ -1530,6 +1534,7 @@ export const AdminPanel: React.FC = () => {
           <AdminPublicProfilesTab
             students={students}
             updateStudent={updateStudent}
+            deleteStudent={deleteStudent}
             badges={badges}
             featuredTitles={featuredTitles}
           />
@@ -1823,6 +1828,21 @@ export const AdminPanel: React.FC = () => {
                               <span>Inspect Proof</span>
                             </button>
                           </div>
+
+                          {/* DELETE RECORD BUTTON */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Permanently delete submission "${sub.title}" by ${sub.studentName}?`)) {
+                                deleteActivity(sub.id);
+                              }
+                            }}
+                            className="w-full py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            title="Permanently delete this submission"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span>Delete Submission Record</span>
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1905,7 +1925,19 @@ export const AdminPanel: React.FC = () => {
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                 {rankRules.map((rk) => (
-                  <div key={rk.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                  <div key={rk.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center relative group">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Delete rank multiplier rule "${rk.rankName}"?`)) {
+                          deleteRankRule(rk.id);
+                        }
+                      }}
+                      className="absolute top-1.5 right-1.5 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer opacity-80 hover:opacity-100 transition-opacity"
+                      title="Delete rank rule"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                     <span className="text-xs font-bold text-slate-900 block">{rk.rankName}</span>
                     <span className="text-lg font-black text-amber-600">+{rk.points}</span>
                     <span className="text-[10px] text-slate-400 block">points</span>
@@ -2261,15 +2293,29 @@ export const AdminPanel: React.FC = () => {
 
                           {/* Action Button */}
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedLedgerItem(ph)}
-                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors border border-slate-200 hover:border-blue-200"
-                              title="View Full Audit Record"
-                            >
-                              <Eye className="w-3 h-3" />
-                              <span>View</span>
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedLedgerItem(ph)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors border border-slate-200 hover:border-blue-200"
+                                title="View Full Audit Record"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>View</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Delete ledger audit record for "${ph.studentName}"?`)) {
+                                    deletePointHistoryRecord(ph.id);
+                                  }
+                                }}
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                                title="Delete Ledger Entry"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2445,6 +2491,7 @@ export const AdminPanel: React.FC = () => {
                       <th className="py-3 px-4">Department / Course</th>
                       <th className="py-3 px-4">Approved Honors</th>
                       <th className="py-3 px-4 text-right">Total Verified Points</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2465,6 +2512,19 @@ export const AdminPanel: React.FC = () => {
                         <td className="py-3 px-4 text-slate-600">{std.department}</td>
                         <td className="py-3 px-4 font-semibold text-emerald-700">{std.approvedCount} Records</td>
                         <td className="py-3 px-4 text-right font-black text-blue-700 text-sm">{std.totalPoints} pts</td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete student "${std.name}" (${std.admissionNumber})? This permanently deletes their account and achievements.`)) {
+                                deleteStudent(std.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                            title="Delete student"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2513,19 +2573,33 @@ export const AdminPanel: React.FC = () => {
                     <p className="text-xs text-slate-500 line-clamp-2">{cert.achievementDetails}</p>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setVerificationCertId(cert.id)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        View QR
+                      </button>
+                      <button
+                        onClick={() => exportCertificatePDF(cert, settings.organizationName, settings.logoUrl)}
+                        className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        PDF
+                      </button>
+                    </div>
                     <button
-                      onClick={() => setVerificationCertId(cert.id)}
-                      className="px-3 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Revoke and permanently delete certificate "${cert.id}" for ${cert.studentName}?`)) {
+                          deleteCertificate(cert.id);
+                        }
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                      title="Delete Certificate"
                     >
-                      <QrCode className="w-3.5 h-3.5" />
-                      View QR
-                    </button>
-                    <button
-                      onClick={() => exportCertificatePDF(cert, settings.organizationName, settings.logoUrl)}
-                      className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                    >
-                      Download PDF
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                     </button>
                   </div>
                 </div>
@@ -2581,9 +2655,25 @@ export const AdminPanel: React.FC = () => {
         {/* TAB 11: AUDIT LOGS */}
         {activeAdminTab === 'audit-logs' && (
           <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-extrabold text-slate-900">Administrative Audit Logs</h1>
-              <p className="text-xs text-slate-500 mt-1">Security log tracking all administrative decisions, point modifications, and policy updates.</p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-extrabold text-slate-900">Administrative Audit Logs</h1>
+                <p className="text-xs text-slate-500 mt-1">Security log tracking all administrative decisions, point modifications, and policy updates.</p>
+              </div>
+              {auditLogs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Are you sure you want to clear all administrative audit logs?')) {
+                      clearAuditLogs();
+                    }
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear All Audit Logs</span>
+                </button>
+              )}
             </div>
 
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
@@ -2595,6 +2685,7 @@ export const AdminPanel: React.FC = () => {
                       <th className="py-3 px-4">Action</th>
                       <th className="py-3 px-4">Admin Author</th>
                       <th className="py-3 px-4">Details</th>
+                      <th className="py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2608,8 +2699,29 @@ export const AdminPanel: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 font-semibold text-blue-700">{log.adminName}</td>
                         <td className="py-3 px-4 text-slate-600">{log.details}</td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm('Delete this audit log record?')) {
+                                deleteAuditLog(log.id);
+                              }
+                            }}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                            title="Delete log entry"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
+                    {auditLogs.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          No audit log entries recorded.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

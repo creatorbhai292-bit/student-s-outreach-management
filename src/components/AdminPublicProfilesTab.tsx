@@ -1,16 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, ActivitySubmission, AchievementBadge, FeaturedStudentTitle } from '../types';
-import { Search, Edit, X, Save, Check, Globe, EyeOff, Camera, Award } from 'lucide-react';
+import { Search, Edit, Trash2, X, Save, Check, Globe, EyeOff, Camera, Award } from 'lucide-react';
 
 interface Props {
   students: Student[];
   updateStudent: (s: Student) => Promise<void>;
+  deleteStudent?: (id: string) => Promise<void>;
   badges: AchievementBadge[];
   featuredTitles: FeaturedStudentTitle[];
 }
 
-export const AdminPublicProfilesTab: React.FC<Props> = ({ students, updateStudent, badges, featuredTitles }) => {
+export const AdminPublicProfilesTab: React.FC<Props> = ({ students, updateStudent, deleteStudent, badges, featuredTitles }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   
@@ -146,12 +147,28 @@ export const AdminPublicProfilesTab: React.FC<Props> = ({ students, updateStuden
                       </span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleEditClick(student)}
-                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors shrink-0"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleEditClick(student)}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                      title="Edit Public Bio & Visibility"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    {deleteStudent && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Permanently delete student account "${student.name}" (${student.admissionNumber})?`)) {
+                            deleteStudent(student.id);
+                          }
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        title="Delete Student Account"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-600" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </motion.div>
